@@ -1,0 +1,166 @@
+numpy >= 1.17.4
+sympy >= 1.7.1
+beautifulsoup4 >= 4.9.3
+lxml >= 4.2.1
+pytorch#include "computeY.h"
+#include <iostream>
+#include "cross_motion_vec.h"
+#include "crossOperatorFunction.h"
+#include "L_calculate.h"
+#include <utility>
+
+// 声明 computeY 函数
+std::pair<Eigen::MatrixXd, Eigen::MatrixXd> computeY(
+    int n,
+    const std::vector<int>& parent_id_arr,
+    const std::vector<Eigen::Matrix<double, 6, 6>>& Xmat_arr,
+    const std::vector<double>& r0_d,
+    const std::vector<double>& r0_dd,
+    const std::vector<double>& q_dot,
+    const std::vector<double>& qr_dot,
+    const std::vector<double>& qr_ddot,
+    double GRAVITY
+)
+{
+
+    // 预分配内存并使用常量大小
+    const int MATRIX_SIZE = 6;
+    const int Y_MIN_COLS = 10;
+    std::vector<Eigen::Matrix<double, 6, 1>> v(n+1);
+    std::vector<Eigen::Matrix<double, 6, 1>> vr(n+1);
+    std::vector<Eigen::Matrix<double, 6, 1>> ar(n+1);
+    std::vector<Eigen::Matrix<double, 6, 10>> Y_min(n);
+
+    // 使用stack分配的固定大小重力向量
+    Eigen::Matrix<double, 6, 1> gravity_vec = Eigen::Matrix<double, 6, 1>::Zero();
+    gravity_vec.template segment<3>(3) << 0, 0, -GRAVITY;
+    Eigen::Map<const Eigen::Matrix<double, MATRIX_SIZE, 1>> eigen_r0_d(r0_d.data());
+    Eigen::Map<const Eigen::Matrix<double, MATRIX_SIZE, 1>> eigen_r0_dd(r0_dd.data());
+
+    // 初始化初始状态，对应MATLAB的v(:,1), vr(:,1), ar(:,1)
+    v[0] = eigen_r0_d;
+    vr[0] = eigen_r0_d;
+    ar[0] = eigen_r0_dd;
+
+    Eigen::Matrix<double, 6, 1> S;
+    S << 0, 0, 1, 0, 0, 0;
+    Y_min[0] = Eigen::Matrix<double, 6, 10>::Zero();  // 6x10 矩阵全零
+    // 前向递归计算速度和加速度
+    for (int ind = 0; ind < n; ++ind) {
+        const auto& Xmat = Xmat_arr[ind];
+
+        // 这里假设S是固定的
+        auto& v_ind = v[ind + 1];
+        auto& vr_ind = vr[ind + 1];
+        auto& ar_ind = ar[ind + 1];
+
+        v_ind = Xmat * v[ind] + S * q_dot[ind];
+        vr_ind = Xmat * vr[ind] + S * qr_dot[ind];
+        ar_ind = Xmat * ar[ind] + cross_motion_vec(v_ind, S * qr_dot[ind]) + S * qr_ddot[ind];
+
+
+
+
+        // 提前计算常用的子矩阵引用
+        const auto& v_head = v_ind.head<3>();
+        const auto& v_tail = v_ind.tail<3>();
+        const auto& vr_head = vr_ind.head<3>();
+        const auto& vr_tail = vr_ind.tail<3>();
+        const auto& ar_head = ar_ind.head<3>();
+        const auto& ar_tail = ar_ind.tail<3>();
+
+        // 预计算cross operator matrices
+        const Eigen::Matrix3d crossOp_vr4_6 = crossOperatorFunction(vr_tail);
+        const Eigen::Matrix3d crossOp_v4_6 = crossOperatorFunction(v_tail);
+        const Eigen::Matrix3d crossOp_vr1_3 = crossOperatorFunction(vr_head);
+        const Eigen::Matrix3d crossOp_v1_3 = crossOperatorFunction(v_head);
+
+        // 使用fixed-size matrix提升性能
+        Eigen::Matrix<double, 6, Y_MIN_COLS> A = Eigen::Matrix<double, 6, Y_MIN_COLS>::Zero();
+
+        // 计算A矩阵的块
+        A.template block<3, 1>(0, 0) = crossOp_vr4_6 * v_tail + crossOp_v4_6 * vr_tail;
+
+        A.template block<3, 3>(0, 1) = crossOp_vr4_6 * crossOp_v1_3 -
+            crossOp_vr1_3 * crossOp_v4_6 + crossOp_v4_6 * crossOp_vr1_3 -
+            crossOp_v1_3 * crossOp_vr4_6 + vr_head * v_tail.transpose() -
+            v_tail * vr_head.transpose() + vr_tail * v_head.transpose() -
+            v_head * vr_tail.transpose();
+
+        A.template block<3, 6>(0, 4) = crossOp_vr1_3 * L_calculate(v_head) +
+            crossOp_v1_3 * L_calculate(vr_head) +
+            L_calculate(crossOp_vr1_3 * v_head);
+
+        A.template block<3, 1>(3, 0) = (crossOp_vr1_3 + crossOp_vr1_3) * v_tail +
+            crossOp_v1_3 * vr_tail + crossOp_vr4_6 * v_head;
+
+        A.template block<3, 3>(3, 1) = crossOp_vr1_3 * crossOp_v1_3 +
+            crossOp_v1_3 * crossOp_vr1_3 +
+            v_head * vr_head.transpose() -
+            vr_head * v_head.transpose();
+
+        // 计算B矩阵
+        Eigen::Matrix<double, 6, Y_MIN_COLS> B = Eigen::Matrix<double, 6, Y_MIN_COLS>::Zero();
+        B.template block<3, 3>(0, 1) = -crossOperatorFunction(ar_tail);
+        B.template block<3, 6>(0, 4) = L_calculate(ar_head);
+        B.template block<3, 1>(3, 0) = ar_tail;
+        B.template block<3, 3>(3, 1) = crossOperatorFunction(ar_head);
+
+        // 计算Y_min
+        Y_min[ind] = 0.5 * A + B;
+
+    }
+
+
+    // 预计算所有需要的转置矩阵
+    std::vector<Eigen::Matrix<double, 6, 6>> X_trans(n);
+    for (int i = 0; i < n; ++i) {
+        X_trans[i] = Xmat_arr[i].transpose();
+    }
+
+
+
+    // 预计算复合变换
+    std::vector<std::vector<Eigen::Matrix<double, 6, 6>>> X_composite(n, std::vector<Eigen::Matrix<double, 6, 6>>(n));
+    for (int i = 0; i < n; ++i) {
+        // 将 X_composite[i][i] 设置为单位矩阵 I6x6
+        X_composite[i][i] = Eigen::Matrix<double, 6, 6>::Identity();
+        for (int j = i + 1; j < n; ++j) {
+            X_composite[i][j] = X_composite[i][j - 1] * X_trans[j];
+        }
+    }
+
+
+    // 构建K矩阵 (42x70)
+    Eigen::MatrixXd K = Eigen::MatrixXd::Zero(42, 70);
+
+    // 使用预计算的复合变换填充K矩阵
+    for (int i = 0; i < n; ++i) {
+        const int row_offset = i * 6;
+        for (int j = i; j < n; ++j) {
+            const int col_offset = j * 10;
+            if (i == 0) {
+                K.block<6, 10>(row_offset, col_offset) = (i == j) ?
+                    Y_min[j] : X_composite[0][j] * Y_min[j];
+            }
+            else {
+                K.block<6, 10>(row_offset, col_offset) = (i == j) ?
+                    Y_min[j] : X_composite[i][j] * Y_min[j];
+            }
+        }
+    }
+
+
+
+
+    // 组装Y矩阵 (7x70)
+    const Eigen::Matrix<double, 6, 1> s_vec = (Eigen::Matrix<double, 6, 1>() << 0, 0, 1, 0, 0, 0).finished();
+    Eigen::MatrixXd Y(7, 70);
+
+
+    for (int i = 0; i < 7; ++i) {
+        Y.row(i) = s_vec.transpose() * K.block<6, 70>(i * 6, 0);
+    }
+
+    return std::make_pair(Y, Y_min[6]);
+}A                                                                                                                                                                                                                                         ...                                                                                                                                                                                                                                                               A
