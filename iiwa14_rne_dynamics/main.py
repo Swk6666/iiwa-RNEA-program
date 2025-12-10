@@ -42,15 +42,17 @@ EE_SITE = "attachment_site"
 # 创建IK求解器实例
 solver = MujocoIKSolver(xml_path, EE_SITE)
 
+initial_q = np.zeros(7)
 # 求解IK问题
 sol, trace = solver.solve(
-    target_pos,
-    target_quat,
-    radius=0.04,
-    reg=1e-3,
-    reg_target=solver.q0,
-    verbose=minimize.Verbosity.FINAL,
+    target_pos, # 目标位置
+    target_quat, # 目标四元数
+    radius=0.04, # 位置容差
+    reg=1e-3, # 正则化项权重
+    reg_target=initial_q, # 初始迭代开始关节角度
+    verbose=minimize.Verbosity.FINAL, # 日志输出
 )
+
 print("IK求解结果:", np.round(sol, 6))
 
 
