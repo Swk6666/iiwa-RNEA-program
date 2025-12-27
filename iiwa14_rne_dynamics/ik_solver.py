@@ -95,6 +95,7 @@ class MujocoIKSolver:
         mujoco.mju_mat2Quat(eff_quat, self.data.site_xmat[self.eff_sid])
         target_quat = self._normalize_quat(quat)
         d_eff = np.empty((3, 3))
+        # （mjd_subQuat本质：右雅可比 / 右雅可比逆）
         mujoco.mjd_subQuat(target_quat, eff_quat, None, d_eff)
 
         target_mat = np.empty(9)
