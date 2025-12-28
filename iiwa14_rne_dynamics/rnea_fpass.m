@@ -13,10 +13,11 @@ function [v, a, f] = rnea_fpass(num_joints, parent_id_arr, Xmat_arr, S_arr, Imat
 
         if parent_ind == 0 % Root link
             v(:,ind) = S * qd(ind);
+            % 最后这一项空间叉积项代表科里奥利加速度和离心加速度，用于计算速度矢量在旋转坐标系下的导数项
             a(:,ind) = Xmat * gravity_vec + S * qdd(ind) + cross_motion_vec(v(:,ind), S * qd(ind));
         else
             v(:,ind) = Xmat * v(:,parent_ind) + S * qd(ind);
-            a(:,ind) = Xmat * a(:,parent_ind) + cross_motion_vec(v(:,ind), S * qd(ind)) + S * qdd(ind);
+            a(:,ind) = Xmat * a(:,parent_ind) +  S * qdd(ind) + cross_motion_vec(v(:,ind), S * qd(ind));
         end
 
         Imat = Imat_arr{ind};

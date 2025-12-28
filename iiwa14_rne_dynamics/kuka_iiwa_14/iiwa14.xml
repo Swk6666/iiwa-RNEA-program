@@ -61,7 +61,7 @@
       <geom class="collision" size="0.08" pos="-0.08 0 0.04"/>
       <geom class="collision" size="0.1" pos="0 0 0.14"/>
       <body name="link1" pos="0 0 0.1575">
-        <inertial mass="5.76" pos="0 -0.03 0.12" diaginertia="0.0333 0.033 0.0123"/>
+        <inertial mass="4" pos="0 -0.03 0.12" diaginertia="0.1 0.09 0.02"/>
         <joint name="joint1" class="joint1"/>
         <geom class="visual" mesh="link_1"/>
         <geom class="collision" size="0.08" pos="0 0 -0.0005"/>
@@ -70,7 +70,7 @@
         <geom class="collision" size="0.07" pos="0.01 -0.045 0.1025"/>
         <geom class="collision" size="0.07" pos="-0.01 -0.045 0.1025"/>
         <body name="link2" pos="0 0 0.2025" quat="0 0 1 1">
-          <inertial mass="6.35" pos="0.0003 0.059 0.042" diaginertia="0.0305 0.0304 0.011" quat="0 0 1 1"/>
+          <inertial mass="4" pos="0.0003 0.059 0.042" diaginertia="0.05 0.018 0.044" quat="0 0 1 1"/>
           <joint name="joint2" class="joint2"/>
           <geom class="visual" material="orange" mesh="link_2_orange"/>
           <geom class="visual" mesh="link_2_grey"/>
