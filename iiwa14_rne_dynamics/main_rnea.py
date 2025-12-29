@@ -6,6 +6,9 @@ from tqdm import tqdm
 from mujoco import minimize
 from ik_solver import MujocoIKSolver
 from Polynolial_traj import plan_quintic, quintic_coeffs, sample_trajectory
+import matplotlib
+matplotlib.use('Agg')  # 使用非交互式后端，避免GUI线程冲突
+import matplotlib.pyplot as plt
 
 
 xml_path = "kuka_iiwa_14/scene_torque.xml"
@@ -68,6 +71,9 @@ coeffs, t, pos, vel, acc = plan_quintic(p0, pT, T=T, num=num)
 
 traj_len = pos.shape[0]
 
+desired_joint_angle = pos
+desired_joint_velocity = vel
+desired_joint_acceleration = acc
 
 
 '''
@@ -145,7 +151,9 @@ traj_len = pos.shape[0]
 '''
 下面这段代码是用pinocchio计算逆动力学，作为前馈，加上反馈，实现力矩控制下的轨迹跟踪
 '''
-
+actual_joint_angle = []
+feedforward_torque = []
+feedback_torque = []
 # PD控制器增益
 Kp = np.array([100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0])/1000
 Kd = np.array([100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0])/1000
@@ -163,6 +171,7 @@ with mujoco.viewer.launch_passive(mj_model, mj_data) as viewer, tqdm(total=0, dy
         # 获取当前关节状态
         q_current = mj_data.qpos[:7].copy()
         v_current = mj_data.qvel[:7].copy()
+        actual_joint_angle.append(q_current)
         
         # 获取期望轨迹状态
         q_desired = pos[idx]
@@ -181,7 +190,8 @@ with mujoco.viewer.launch_passive(mj_model, mj_data) as viewer, tqdm(total=0, dy
         
         # 总控制力矩 = 前馈 + 反馈
         tau_total = tau_feedforward + tau_feedback
-        
+        feedforward_torque.append(tau_feedforward)
+        feedback_torque.append(tau_feedback)
         # 设置力矩控制输入
         mj_data.ctrl[:] = tau_total
         
@@ -199,4 +209,75 @@ with mujoco.viewer.launch_passive(mj_model, mj_data) as viewer, tqdm(total=0, dy
             pbar.update(1)  # 更新一次进度条（动态刷新）
 
         viewer.sync()
+
+# 转换为numpy数组
+actual_joint_angle = np.array(actual_joint_angle)
+feedforward_torque = np.array(feedforward_torque)
+feedback_torque = np.array(feedback_torque)
+# 保存为mat文件
+savemat("joint_angles_comparison.mat", {
+    "desired_joint_angle": desired_joint_angle,
+    "actual_joint_angle": actual_joint_angle,
+    "time": t[:len(actual_joint_angle)],
+    "feedforward_torque": feedforward_torque,
+    "feedback_torque": feedback_torque,
+    "desired_joint_velocity": desired_joint_velocity,
+    "desired_joint_acceleration": desired_joint_acceleration,
+})
+print(f"\n关节角度数据已保存到 joint_angles_comparison.mat")
+
+# 绘制7个关节的期望与实际角度对比图
+fig, axes = plt.subplots(7, 1, figsize=(12, 14))
+fig.suptitle('Joint Angles: Desired vs Actual', fontsize=16)
+
+time_array = t[:len(actual_joint_angle)]
+
+for i in range(7):
+    axes[i].plot(time_array, desired_joint_angle[:len(actual_joint_angle), i], 
+                 'b-', label='Desired', linewidth=2)
+    axes[i].plot(time_array, actual_joint_angle[:, i], 
+                 'r--', label='Actual', linewidth=1.5, alpha=0.8)
+    axes[i].set_ylabel(f'Joint {i+1} [rad]')
+    axes[i].grid(True, alpha=0.3)
+    axes[i].legend(loc='best')
+    
+axes[-1].set_xlabel('Time [s]')
+plt.tight_layout()
+plt.savefig('joint_angles_comparison.png', dpi=300, bbox_inches='tight')
+print(f"关节角度对比图已保存到 joint_angles_comparison.png")
+#plt.show()
+
+# 计算并打印跟踪误差统计
+tracking_error = actual_joint_angle - desired_joint_angle[:len(actual_joint_angle)]
+print(f"\n跟踪误差统计 (rad):")
+print(f"最大绝对误差: {np.max(np.abs(tracking_error), axis=0)}")
+print(f"均方根误差 (RMSE): {np.sqrt(np.mean(tracking_error**2, axis=0))}")
+
+# 绘制7个关节的前馈与反馈力矩对比图
+fig2, axes2 = plt.subplots(7, 1, figsize=(12, 14))
+fig2.suptitle('Control Torques: Feedforward vs Feedback', fontsize=16)
+
+for i in range(7):
+    axes2[i].plot(time_array, feedforward_torque[:, i], 
+                  'g-', label='Feedforward', linewidth=2)
+    axes2[i].plot(time_array, feedback_torque[:, i], 
+                  'm--', label='Feedback', linewidth=1.5, alpha=0.8)
+    axes2[i].plot(time_array, feedforward_torque[:, i] + feedback_torque[:, i], 
+                  'k:', label='Total', linewidth=1, alpha=0.6)
+    axes2[i].set_ylabel(f'Joint {i+1} [N·m]')
+    axes2[i].grid(True, alpha=0.3)
+    axes2[i].legend(loc='best')
+    
+axes2[-1].set_xlabel('Time [s]')
+plt.tight_layout()
+plt.savefig('torque_comparison.png', dpi=300, bbox_inches='tight')
+print(f"力矩对比图已保存到 torque_comparison.png")
+
+# 打印力矩统计信息
+print(f"\n前馈力矩统计 (N·m):")
+print(f"最大值: {np.max(np.abs(feedforward_torque), axis=0)}")
+print(f"均方根: {np.sqrt(np.mean(feedforward_torque**2, axis=0))}")
+print(f"\n反馈力矩统计 (N·m):")
+print(f"最大值: {np.max(np.abs(feedback_torque), axis=0)}")
+print(f"均方根: {np.sqrt(np.mean(feedback_torque**2, axis=0))}")
 
