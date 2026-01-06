@@ -51,26 +51,19 @@ $$ \delta Q = Q_{target} \otimes Q_{curr}^{-1} = [w, x, y, z] $$
 这个 $\delta Q$ 代表了“从当前姿态转到目标姿态所需的旋转”。
 
 ### 3.2 物理含义：轴角分解
-任意单位四元数都可以写成 **轴-角 (Axis-Angle)** 形式：
-$$ \delta Q = \left[ \cos\left(\frac{\theta}{2}\right), \;\; \mathbf{u} \sin\left(\frac{\theta}{2}\right) \right] $$
-*   $\theta$：需要旋转的角度（误差大小）。
-*   $\mathbf{u}$：旋转轴（误差方向）。
+现在我们有一个四元数 $\Delta \mathbf{q} = [w, x, y, z]^T$（实部为 $w$，虚部为 $\mathbf{v}=[x,y,z]^T$），我们需要把它变成一个 3维向量 $\delta \boldsymbol{\theta}$。
 
-### 3.3 从 4D 到 3D：取虚部
-我们需要一个 3 维向量作为误差 $\mathbf{r}_{rot}$。代码中使用的 `mujoco.mju_subQuat` 实际上是在提取 $\delta Q$ 的 **虚部（向量部分）**。
+这实际上就是将四元数转换为**轴-角（Axis-Angle）**表示，也就是李群 $SO(3)$ 到李代数 $\mathfrak{so}(3)$ 的映射：
 
-$$ \mathbf{r}_{rot} \approx \text{VectorPart}(\delta Q) = \mathbf{u} \sin\left(\frac{\theta}{2}\right) $$
+$$ \delta \boldsymbol{\theta} = \log(\Delta \mathbf{q}) $$
 
-**这一步的关键点**：
-1.  **降维**：去掉了实部，将 4D 数据变为 3D。
-2.  **线性化**：当误差很小（$\theta \to 0$）时，$\sin(\frac{\theta}{2}) \approx \frac{\theta}{2}$。此时，$\mathbf{r}_{rot} \approx \mathbf{u} \cdot \frac{\theta}{2}$。
+具体计算公式为：
+如果旋转角度 $\phi = 2 \arccos(w)$，旋转轴 $\mathbf{u} = \frac{\mathbf{v}}{\|\mathbf{v}\|}$，那么：
+$$ \delta \boldsymbol{\theta} = \phi \cdot \mathbf{u} $$
 
-*   **代码对应**:
-    ```python
-    res_quat = np.empty(3)
-    mujoco.mju_subQuat(res_quat, target_quat, eff_quat) # 计算虚部差值
-    res_quat *= radius # 加权
-    ```
+为了避免数值不稳定（当 $\phi \approx 0$ 时），通常使用 `atan2` 的形式：
+$$ \delta \boldsymbol{\theta} = \frac{2 \arccos(w)}{\sqrt{1-w^2}} \begin{bmatrix} x \\ y \\ z \end{bmatrix} \approx \frac{2 \cdot \text{atan2}(\|\mathbf{v}\|, w)}{\|\mathbf{v}\|} \mathbf{v} $$
+
 
 ---
 
