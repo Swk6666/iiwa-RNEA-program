@@ -77,7 +77,7 @@ for ind = 1:n
     Xmat_arr(:,:,ind) = xmat_func_arr{ind}(q(ind));
 end
 % Compute v, a, f using forward recursion
-GRAVITY = 0 ;
+GRAVITY = -9.81 ;
 [v, a, f] = rnea_fpass(n, parent_id_arr, Xmat_arr, S_arr, Imat_arr, qd, qdd, GRAVITY);
 
 % Compute joint torques using backward recursion
