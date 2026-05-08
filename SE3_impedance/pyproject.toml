@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "se3-impedance"
+version = "0.1.0"
+description = "SE(3) impedance control experiments with bundled MuJoCo Franka model assets."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "matplotlib>=3.5",
+    "mujoco>=3.1",
+    "numpy>=1.23",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+se3_impedance = [
+    "models/franka_panda/*",
+    "models/franka_panda/assets/*",
+]
